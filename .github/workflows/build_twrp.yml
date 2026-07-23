@@ -1,0 +1,49 @@
+name: Compilar TWRP
+
+on:
+  workflow_dispatch: # Esto te dará un botón en GitHub para iniciar la compilación cuando quieras
+
+jobs:
+  build:
+    name: Construir TWRP para scout
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Descargar tu Device Tree
+        uses: actions/checkout@v4
+
+      - name: Instalar dependencias pesadas
+        run: |
+          sudo apt update
+          sudo apt -y install git-core gnupg flex bison build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip
+          curl https://storage.googleapis.com/git-repo-downloads/repo > repo
+          chmod a+x repo
+          sudo mv repo /usr/local/bin/repo
+
+      - name: Descargar el código fuente de TWRP
+        run: |
+          mkdir workspace
+          cd workspace
+          repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-12.1 --depth=1
+          repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
+
+      - name: Copiar tu Device Tree al entorno
+        run: |
+          mkdir -p workspace/device/motorola/scout
+          # Excluimos la carpeta de Github Actions para copiar solo el Device Tree
+          rsync -av --exclude='.github' ./ workspace/device/motorola/scout/
+
+      - name: ¡A compilar! (vendorbootimage)
+        run: |
+          cd workspace
+          export ALLOW_MISSING_DEPENDENCIES=true
+          source build/envsetup.sh
+          lunch twrp_scout-eng
+          mka vendorbootimage
+
+      - name: Entregar el tesoro (Subir el .img)
+        uses: actions/upload-artifact@v4
+        with:
+          name: TWRP-vendor_boot-scout
+          path: workspace/out/target/product/scout/vendor_boot.img
