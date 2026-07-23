@@ -1,7 +1,7 @@
 name: Compilar TWRP
 
 on:
-  workflow_dispatch: # Esto te dará un botón en GitHub para iniciar la compilación cuando quieras
+  workflow_dispatch: # Esto te dará un botón en GitHub para iniciar la compilación
 
 jobs:
   build:
@@ -9,11 +9,23 @@ jobs:
     runs-on: ubuntu-22.04
     permissions:
       contents: write
+
     steps:
-      - name: Descargar tu Device Tree
+      - name: 🧹 Limpiar espacio y poner esteroides (Swap)
+        run: |
+          # Borramos herramientas pesadas de GitHub que no necesitamos para ganar >30GB
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo apt-get clean
+          # Creamos 16GB de memoria RAM virtual (Swap) para que el compilador no explote
+          sudo fallocate -l 16G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+
+      - name: 📥 Descargar tu Device Tree
         uses: actions/checkout@v4
 
-      - name: Instalar dependencias pesadas
+      - name: 🛠️ Instalar dependencias pesadas
         run: |
           sudo apt update
           sudo apt -y install git-core gnupg flex bison build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip
@@ -21,28 +33,31 @@ jobs:
           chmod a+x repo
           sudo mv repo /usr/local/bin/repo
 
-      - name: Descargar el código fuente de TWRP
+      - name: 🔄 Descargar el código fuente de TWRP
         run: |
           mkdir workspace
           cd workspace
+          # Git necesita identidad para que la herramienta 'repo' no se queje
+          git config --global user.name "massimo-dotcom"
+          git config --global user.email "massimovergara474@gmail.com"
           repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-12.1 --depth=1
           repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
 
-      - name: Copiar tu Device Tree al entorno
+      - name: 📂 Copiar tu Device Tree al entorno
         run: |
           mkdir -p workspace/device/motorola/scout
-          # Excluimos la carpeta de Github Actions para copiar solo el Device Tree
           rsync -av --exclude='.github' ./ workspace/device/motorola/scout/
 
-      - name: ¡A compilar! (vendorbootimage)
+      - name: 🚀 ¡A compilar! (vendorbootimage)
         run: |
           cd workspace
           export ALLOW_MISSING_DEPENDENCIES=true
+          export LC_ALL="C"
           source build/envsetup.sh
           lunch twrp_scout-eng
-          mka vendorbootimage
+          make vendorbootimage -j$(nproc --all)
 
-      - name: Entregar el tesoro (Subir el .img)
+      - name: 🏆 Entregar el tesoro (Subir el .img)
         uses: actions/upload-artifact@v4
         with:
           name: TWRP-vendor_boot-scout
